@@ -1627,6 +1627,20 @@ export async function getUserByEmail(email) {
   }
 }
 
+// Get nurse by license number (cédula profesional)
+export async function getUserByLicenseNumber(licenseNumber) {
+  try {
+    const result = await db.select(
+      "SELECT * FROM users WHERE license_number = ? AND role = 'nurse'",
+      [licenseNumber]
+    );
+    return result.length > 0 ? result[0] : null;
+  } catch (error) {
+    console.error('Error getting user by license number:', error);
+    throw error;
+  }
+}
+
 // Get user by ID
 export async function getUserById(id) {
   try {

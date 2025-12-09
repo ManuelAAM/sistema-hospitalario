@@ -101,7 +101,8 @@ export async function register(userData) {
       role: userData.role || 'patient',
       name: userData.name,
       email: userData.email,
-      phone: userData.phone
+      phone: userData.phone,
+      license_number: userData.licenseNumber || null
     });
 
     console.log('User registered successfully');
@@ -136,9 +137,10 @@ export async function createDefaultUsers() {
         password: 'enfermero123',
         role: 'nurse',
         name: 'Enfermero Juan López',
-        email: 'enfermero@hospital.com'
+        email: 'enfermero@hospital.com',
+        licenseNumber: '1234567'
       });
-      console.log('✓ Default nurse user created (username: enfermero, password: enfermero123)');
+      console.log('✓ Default nurse user created (username: enfermero, password: enfermero123, license: 1234567)');
     }
 
     // Create default patient user
@@ -272,6 +274,52 @@ export async function resetPasswordWithToken(token, newPassword) {
     return { success: true };
   } catch (error) {
     console.error('Reset password error:', error);
+    throw error;
+  }
+}
+
+// Recover password by license number (for nurses)
+export async function recoverPasswordByLicense(licenseNumber, newPassword) {
+  try {
+    console.log('🔐 Attempting password recovery with license number');
+    const { getUserByLicenseNumber, updateUserPassword } = await import('./database');
+    
+    // Find nurse by license number
+    const user = await getUserByLicenseNumber(licenseNumber);
+    
+    if (!user) {
+      console.error('❌ No nurse found with this license number');
+      throw new Error('No se encontró un enfermero con esta cédula profesional');
+    }
+
+    // Check if user is active
+    if (user.is_active === 0) {
+      console.error('❌ User account is inactive');
+      throw new Error('Esta cuenta ha sido desactivada');
+    }
+
+    // Validate new password
+    if (!newPassword || newPassword.length < 6) {
+      throw new Error('La contraseña debe tener al menos 6 caracteres');
+    }
+
+    console.log('🔑 Generating new password hash...');
+    // Hash new password
+    const newPasswordHash = await hashPassword(newPassword);
+
+    console.log('💾 Updating password in database...');
+    // Update password
+    await updateUserPassword(user.id, newPasswordHash);
+
+    console.log('✅ Password recovered successfully for:', user.name);
+    return { 
+      success: true, 
+      message: 'Contraseña actualizada exitosamente',
+      username: user.username,
+      name: user.name
+    };
+  } catch (error) {
+    console.error('❌ Password recovery error:', error);
     throw error;
   }
 }
