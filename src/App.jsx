@@ -1511,6 +1511,102 @@ Ejemplo:
         )}
       </div>
 
+      {/* Signos Vitales del Turno */}
+      <div className="glass-effect p-6 rounded-2xl shadow-lg border border-gray-200/50">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-xl font-bold flex items-center bg-gradient-to-r from-red-600 to-pink-600 bg-clip-text text-transparent">
+            <Activity className="mr-2 text-red-600" size={24} />
+            Signos Vitales del Turno
+          </h3>
+          <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-semibold">
+            {vitalSigns.filter(vital => {
+              const vitalDate = new Date(vital.date);
+              const today = new Date();
+              return vitalDate.toDateString() === today.toDateString();
+            }).length} registros hoy
+          </span>
+        </div>
+        
+        {vitalSigns.length > 0 ? (
+          <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+            {vitalSigns.slice().reverse().map((vital, index) => {
+              const patient = patients.find(p => p.id === vital.patientId);
+              const vitalDate = new Date(vital.date);
+              const today = new Date();
+              const isToday = vitalDate.toDateString() === today.toDateString();
+              const isRecent = (Date.now() - vitalDate.getTime()) < 3600000; // Última hora
+              
+              return (
+                <div 
+                  key={vital.id || index} 
+                  className="border-l-4 border-red-300 bg-red-50 rounded-xl p-4 hover:shadow-md transition-all"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Activity className="text-red-600" size={20} />
+                      <div>
+                        <p className="font-bold text-gray-800">
+                          {patient ? patient.name : 'Paciente desconocido'}
+                          {isToday && <span className="ml-2 text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">HOY</span>}
+                          {isRecent && <span className="ml-2 text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">RECIENTE</span>}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          🏥 Habitación {patient?.room} • 
+                          <Clock className="inline ml-1 mr-1" size={12} />
+                          {vitalDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} - {vitalDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3 mb-3 pl-7">
+                    <div className="bg-white p-2.5 rounded-lg">
+                      <p className="text-xs text-gray-600 flex items-center gap-1">
+                        🌡️ Temperatura
+                      </p>
+                      <p className="font-bold text-base text-gray-800">{vital.temperature}°C</p>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-lg">
+                      <p className="text-xs text-gray-600 flex items-center gap-1">
+                        💓 Presión Arterial
+                      </p>
+                      <p className="font-bold text-base text-gray-800">{vital.bloodPressure} mmHg</p>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-lg">
+                      <p className="text-xs text-gray-600 flex items-center gap-1">
+                        ❤️ Frec. Cardíaca
+                      </p>
+                      <p className="font-bold text-base text-gray-800">{vital.heartRate} lpm</p>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-lg">
+                      <p className="text-xs text-gray-600 flex items-center gap-1">
+                        🫁 Frec. Respiratoria
+                      </p>
+                      <p className="font-bold text-base text-gray-800">{vital.respiratoryRate} rpm</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between pl-7 pt-2 border-t border-red-200">
+                    <p className="text-xs text-gray-500">
+                      👨‍⚕️ Registrado por: <span className="font-semibold">{vital.registeredBy}</span>
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      #{vital.id}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            <Activity className="mx-auto mb-3 text-gray-400" size={48} />
+            <p>No hay signos vitales registrados</p>
+            <p className="text-sm mt-2">Registre los primeros signos vitales del turno arriba</p>
+          </div>
+        )}
+      </div>
+
       <div className="glass-effect p-6 rounded-2xl shadow-lg border border-gray-200/50">
         <h3 className="text-xl font-bold mb-5 flex items-center bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
           <Clock className="mr-2 text-blue-600" size={24} />
