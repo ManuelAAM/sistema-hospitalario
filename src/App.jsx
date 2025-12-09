@@ -97,13 +97,23 @@ const HospitalManagementSystem = () => {
     { name: 'Medicina General', icon: Stethoscope, description: 'Atención médica integral' }
   ];
 
-  const handleLoginSuccess = (user) => {
+  const handleLoginSuccess = async (user) => {
     // Map role to type for backwards compatibility
     setCurrentUser({
       ...user,
       type: user.role === 'nurse' ? 'nurse' : user.role === 'patient' ? 'patient' : 'admin'
     });
     setCurrentView('dashboard');
+    
+    // Initialize sample nurse data if user is a nurse
+    if (user.role === 'nurse') {
+      try {
+        const { initializeSampleNurseData } = await import('./services/database');
+        await initializeSampleNurseData();
+      } catch (error) {
+        console.error('Error initializing nurse data:', error);
+      }
+    }
   };
 
   const handleLogout = () => {
@@ -582,8 +592,53 @@ const HospitalManagementSystem = () => {
     const [newTreatment, setNewTreatment] = useState({ patientId: '', medication: '', dose: '', frequency: '', notes: '' });
     const [newVitalSigns, setNewVitalSigns] = useState({ patientId: '', temperature: '', bloodPressure: '', heartRate: '', respiratoryRate: '' });
     const [newNurseNote, setNewNurseNote] = useState({ patientId: '', note: '' });
+    const [assignedPatients, setAssignedPatients] = useState([]);
+    const [nurseShifts, setNurseShifts] = useState([]);
+    const [currentShift, setCurrentShift] = useState(null);
+    const [loadingAssignments, setLoadingAssignments] = useState(true);
 
-    if (patientsLoading) {
+    // Load assigned patients and shifts
+    useEffect(() => {
+      loadNurseData();
+    }, [currentUser]);
+
+    const loadNurseData = async () => {
+      if (!currentUser || currentUser.type !== 'nurse') return;
+      
+      setLoadingAssignments(true);
+      try {
+        const { getAssignedPatients, getNurseShiftsWithDetails, getActiveNurseShift } = await import('./services/database');
+        
+        // Get assigned patients for today
+        const assigned = await getAssignedPatients(currentUser.id);
+        setAssignedPatients(assigned);
+        
+        // Get shifts for this week
+        const today = new Date();
+        const startDate = new Date(today);
+        startDate.setDate(today.getDate() - 3);
+        const endDate = new Date(today);
+        endDate.setDate(today.getDate() + 4);
+        
+        const shifts = await getNurseShiftsWithDetails(
+          currentUser.id,
+          startDate.toISOString().split('T')[0],
+          endDate.toISOString().split('T')[0]
+        );
+        setNurseShifts(shifts);
+        
+        // Get current active shift
+        const activeShift = await getActiveNurseShift(currentUser.id);
+        setCurrentShift(activeShift);
+        
+      } catch (error) {
+        console.error('Error loading nurse data:', error);
+      } finally {
+        setLoadingAssignments(false);
+      }
+    };
+
+    if (patientsLoading || loadingAssignments) {
       return (
         <div className="flex items-center justify-center min-h-[500px]">
           <div className="text-center animate-fadeIn">
@@ -592,7 +647,7 @@ const HospitalManagementSystem = () => {
               <div className="spinner mx-auto relative"></div>
             </div>
             <p className="text-xl font-semibold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-              Cargando datos de pacientes...
+              Cargando datos de enfermería...
             </p>
             <p className="text-sm text-gray-500 mt-2">Por favor espere un momento</p>
           </div>
@@ -602,14 +657,39 @@ const HospitalManagementSystem = () => {
 
     return (
     <div className="space-y-6 page-transition">
+      {/* Current Shift Info */}
+      {currentShift && (
+        <div className="glass-effect p-6 rounded-2xl shadow-lg border-l-4 border-green-500 bg-gradient-to-r from-green-50 to-emerald-50">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <Clock className="text-green-600" size={24} />
+                Turno Actual Activo
+              </h3>
+              <p className="text-gray-600 mt-1">
+                🕐 {currentShift.start_time} - {currentShift.end_time} • 
+                <span className="ml-2 font-semibold">{currentShift.shift_type}</span> • 
+                <span className="ml-2">{currentShift.department}</span>
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                {assignedPatients.length} paciente(s) asignado(s)
+              </p>
+            </div>
+            <div className="px-4 py-2 bg-green-500 text-white rounded-xl font-bold text-sm animate-pulse">
+              EN TURNO
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <div className="glass-effect p-6 rounded-2xl card-hover border-l-4 border-blue-500 shadow-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium">Pacientes Activos</p>
+              <p className="text-gray-600 text-sm font-medium">Mis Pacientes Asignados</p>
               <p className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-transparent">
-                {patients.length}
+                {assignedPatients.length}
               </p>
             </div>
             <div className="relative">
@@ -652,9 +732,9 @@ const HospitalManagementSystem = () => {
         <div className="glass-effect p-6 rounded-2xl card-hover border-l-4 border-red-500 shadow-lg">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm font-medium">Estado Crítico</p>
+              <p className="text-gray-600 text-sm font-medium">Pacientes Críticos</p>
               <p className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-red-600 to-pink-400 bg-clip-text text-transparent">
-                {patients.filter(p => p.condition === 'Crítico').length}
+                {assignedPatients.filter(p => p.condition === 'Crítico').length}
               </p>
             </div>
             <div className="relative">
@@ -665,28 +745,104 @@ const HospitalManagementSystem = () => {
         </div>
       </div>
 
+      {/* My Shift Schedule */}
+      <div className="glass-effect p-6 rounded-2xl shadow-lg border border-gray-200/50">
+        <h3 className="text-xl font-bold mb-5 flex items-center bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+          <Clock className="mr-2 text-indigo-600" size={24} />
+          Mi Jornada Laboral y Turnos
+        </h3>
+        {nurseShifts.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[700px]">
+              <thead>
+                <tr className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b-2 border-indigo-200">
+                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">Fecha</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">Horario</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">Tipo de Turno</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">Departamento</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">Pacientes Asignados</th>
+                  <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {nurseShifts.map(shift => {
+                  const isToday = shift.date === new Date().toISOString().split('T')[0];
+                  return (
+                    <tr key={shift.id} className={`border-b border-gray-100 hover:bg-indigo-50/50 transition-colors ${isToday ? 'bg-green-50' : ''}`}>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-800">
+                        📅 {new Date(shift.date).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })}
+                        {isToday && <span className="ml-2 text-xs bg-green-500 text-white px-2 py-1 rounded-full">HOY</span>}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">🕐 {shift.start_time} - {shift.end_time}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                          shift.shift_type === 'Mañana' ? 'bg-yellow-100 text-yellow-800' :
+                          shift.shift_type === 'Tarde' ? 'bg-orange-100 text-orange-800' :
+                          'bg-indigo-100 text-indigo-800'
+                        }`}>
+                          {shift.shift_type}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{shift.department}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        <span className="font-bold text-blue-600">{shift.assigned_patients_count || 0}</span> pacientes
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`status-badge ${
+                          shift.status === 'Scheduled' ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white' :
+                          shift.status === 'Completed' ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white' :
+                          'bg-gradient-to-r from-gray-400 to-gray-500 text-white'
+                        }`}>
+                          {shift.status === 'Scheduled' ? 'Programado' : shift.status === 'Completed' ? 'Completado' : shift.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            <Calendar className="mx-auto mb-3 text-gray-400" size={48} />
+            <p>No hay turnos programados para los próximos días</p>
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="glass-effect p-6 rounded-2xl shadow-lg border border-gray-200/50">
           <h3 className="text-xl font-bold mb-4 flex items-center bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
             <Users className="mr-2 text-purple-600" size={24} />
-            Lista de Pacientes
+            Mis Pacientes Asignados
           </h3>
-          <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-            {patients.map(patient => (
-              <div key={patient.id} className="bg-white border-2 border-gray-100 p-4 rounded-xl hover:border-purple-300 hover:shadow-md cursor-pointer transition-all group" onClick={() => viewPatientDetails(patient)}>
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="font-bold text-gray-800 group-hover:text-purple-600 transition">{patient.name}</p>
-                    <p className="text-sm text-gray-600">🏥 Habitación {patient.room} • {patient.age} años</p>
-                    <p className="text-xs text-gray-500">🩸 Tipo de sangre: {patient.bloodType}</p>
+          {assignedPatients.length > 0 ? (
+            <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+              {assignedPatients.map(patient => (
+                <div key={patient.id} className="bg-white border-2 border-blue-200 p-4 rounded-xl hover:border-purple-300 hover:shadow-md cursor-pointer transition-all group" onClick={() => viewPatientDetails(patient)}>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="font-bold text-gray-800 group-hover:text-purple-600 transition">{patient.name}</p>
+                      <p className="text-sm text-gray-600">🏥 Habitación {patient.room} • {patient.age} años</p>
+                      <p className="text-xs text-gray-500">🩸 Tipo de sangre: {patient.blood_type}</p>
+                      {patient.assignment_notes && (
+                        <p className="text-xs text-gray-500 mt-1 italic">📋 {patient.assignment_notes}</p>
+                      )}
+                    </div>
+                    <span className={'status-badge ' + (patient.condition === 'Crítico' ? 'bg-gradient-to-r from-red-500 to-pink-500 text-white' : patient.condition === 'Estable' ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white' : 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white')}>
+                      {patient.condition}
+                    </span>
                   </div>
-                  <span className={'status-badge ' + (patient.condition === 'Crítico' ? 'bg-gradient-to-r from-red-500 to-pink-500 text-white' : patient.condition === 'Estable' ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white' : 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white')}>
-                    {patient.condition}
-                  </span>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <Users className="mx-auto mb-3 text-gray-400" size={48} />
+              <p>No hay pacientes asignados en este turno</p>
+              <p className="text-sm mt-2">Contacte al supervisor de turno para obtener asignaciones</p>
+            </div>
+          )}
         </div>
 
         <div className="glass-effect p-6 rounded-2xl shadow-lg border border-gray-200/50">
@@ -702,7 +858,7 @@ const HospitalManagementSystem = () => {
               onChange={(e) => setNewVitalSigns(prev => ({...prev, patientId: e.target.value}))}
             >
               <option value="">Seleccionar paciente</option>
-              {patients.map(p => (
+              {assignedPatients.map(p => (
                 <option key={p.id} value={p.id}>{p.name} - Hab. {p.room}</option>
               ))}
             </select>
@@ -762,7 +918,7 @@ const HospitalManagementSystem = () => {
               onChange={(e) => setNewTreatment(prev => ({...prev, patientId: e.target.value}))}
             >
               <option value="">Seleccionar paciente</option>
-              {patients.map(p => (
+              {assignedPatients.map(p => (
                 <option key={p.id} value={p.id}>{p.name} - Hab. {p.room}</option>
               ))}
             </select>

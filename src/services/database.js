@@ -539,6 +539,25 @@ async function createTables() {
     )
   `);
 
+  // Nurse patient assignments table
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS nurse_patient_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nurse_id INTEGER NOT NULL,
+      patient_id INTEGER NOT NULL,
+      shift_id INTEGER,
+      assigned_date TEXT NOT NULL,
+      assignment_start TEXT NOT NULL,
+      assignment_end TEXT,
+      status TEXT DEFAULT 'Active',
+      notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (nurse_id) REFERENCES users(id),
+      FOREIGN KEY (patient_id) REFERENCES patients(id),
+      FOREIGN KEY (shift_id) REFERENCES shifts(id)
+    )
+  `);
+
   console.log('✓ Database tables created successfully');
   } catch (error) {
     console.error('Error creating tables:', error);
@@ -1131,6 +1150,95 @@ export async function deleteShift(id) {
   await db.execute('DELETE FROM shifts WHERE id = ?', [id]);
 }
 
+// ========== NURSE PATIENT ASSIGNMENT OPERATIONS ==========
+
+export async function getAssignedPatients(nurseId, date = null) {
+  const db = await initDatabase();
+  const today = date || new Date().toISOString().split('T')[0];
+  
+  // Get patients assigned to this nurse for today or active assignments
+  const query = `
+    SELECT 
+      p.*,
+      npa.id as assignment_id,
+      npa.assigned_date,
+      npa.assignment_start,
+      npa.assignment_end,
+      npa.notes as assignment_notes,
+      npa.status as assignment_status
+    FROM nurse_patient_assignments npa
+    JOIN patients p ON npa.patient_id = p.id
+    WHERE npa.nurse_id = ? 
+    AND npa.status = 'Active'
+    AND (npa.assigned_date = ? OR npa.assignment_end IS NULL OR npa.assignment_end >= ?)
+    ORDER BY p.condition DESC, p.room
+  `;
+  
+  return await db.select(query, [nurseId, today, today]);
+}
+
+export async function assignPatientToNurse(assignment) {
+  const db = await initDatabase();
+  const result = await db.execute(
+    `INSERT INTO nurse_patient_assignments (nurse_id, patient_id, shift_id, assigned_date, assignment_start, assignment_end, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [assignment.nurseId, assignment.patientId, assignment.shiftId, assignment.assignedDate, assignment.assignmentStart, assignment.assignmentEnd, assignment.notes]
+  );
+  return result.lastInsertId;
+}
+
+export async function updatePatientAssignment(id, assignment) {
+  const db = await initDatabase();
+  await db.execute(
+    `UPDATE nurse_patient_assignments 
+     SET assignment_end = ?, status = ?, notes = ?
+     WHERE id = ?`,
+    [assignment.assignmentEnd, assignment.status, assignment.notes, id]
+  );
+}
+
+export async function getNurseShiftsWithDetails(nurseId, startDate = null, endDate = null) {
+  const db = await initDatabase();
+  const today = new Date().toISOString().split('T')[0];
+  const start = startDate || today;
+  const end = endDate || today;
+  
+  const query = `
+    SELECT 
+      s.*,
+      u.name as nurse_name,
+      COUNT(npa.id) as assigned_patients_count
+    FROM shifts s
+    JOIN users u ON s.user_id = u.id
+    LEFT JOIN nurse_patient_assignments npa ON s.id = npa.shift_id AND npa.status = 'Active'
+    WHERE s.user_id = ? 
+    AND s.date BETWEEN ? AND ?
+    GROUP BY s.id
+    ORDER BY s.date DESC, s.start_time
+  `;
+  
+  return await db.select(query, [nurseId, start, end]);
+}
+
+export async function getActiveNurseShift(nurseId) {
+  const db = await initDatabase();
+  const today = new Date().toISOString().split('T')[0];
+  const now = new Date().toTimeString().split(' ')[0].substring(0, 5); // HH:MM format
+  
+  const query = `
+    SELECT * FROM shifts 
+    WHERE user_id = ? 
+    AND date = ?
+    AND start_time <= ?
+    AND end_time >= ?
+    AND status = 'Scheduled'
+    LIMIT 1
+  `;
+  
+  const results = await db.select(query, [nurseId, today, now, now]);
+  return results[0] || null;
+}
+
 // ========== AUDIT LOG OPERATIONS ==========
 
 export async function createAuditLog(log) {
@@ -1341,6 +1449,115 @@ export async function getUserById(id) {
   } catch (error) {
     console.error('Error getting user by ID:', error);
     throw error;
+  }
+}
+
+// Initialize sample nurse shifts and patient assignments
+export async function initializeSampleNurseData() {
+  try {
+    const db = await initDatabase();
+    
+    // Check if sample data already exists
+    const existingShifts = await db.select('SELECT COUNT(*) as count FROM shifts');
+    if (existingShifts[0].count > 0) {
+      console.log('Sample shifts already exist');
+      return;
+    }
+    
+    // Get nurse user (assuming enfermero user exists with ID from login)
+    const nurses = await db.select('SELECT id FROM users WHERE role = "nurse" OR username = "enfermero"');
+    if (nurses.length === 0) {
+      console.log('No nurse users found');
+      return;
+    }
+    
+    const nurseId = nurses[0].id;
+    const today = new Date();
+    
+    // Create shifts for this week
+    const shifts = [
+      // Yesterday
+      {
+        userId: nurseId,
+        date: new Date(today.getTime() - 86400000).toISOString().split('T')[0],
+        startTime: '07:00',
+        endTime: '15:00',
+        shiftType: 'Mañana',
+        department: 'Medicina General',
+        status: 'Completed',
+        notes: 'Turno completado sin incidentes'
+      },
+      // Today
+      {
+        userId: nurseId,
+        date: today.toISOString().split('T')[0],
+        startTime: '07:00',
+        endTime: '15:00',
+        shiftType: 'Mañana',
+        department: 'Medicina General',
+        status: 'Scheduled',
+        notes: 'Turno actual'
+      },
+      // Tomorrow
+      {
+        userId: nurseId,
+        date: new Date(today.getTime() + 86400000).toISOString().split('T')[0],
+        startTime: '15:00',
+        endTime: '23:00',
+        shiftType: 'Tarde',
+        department: 'Medicina General',
+        status: 'Scheduled',
+        notes: null
+      },
+      // Day after tomorrow
+      {
+        userId: nurseId,
+        date: new Date(today.getTime() + 172800000).toISOString().split('T')[0],
+        startTime: '23:00',
+        endTime: '07:00',
+        shiftType: 'Noche',
+        department: 'Medicina General',
+        status: 'Scheduled',
+        notes: 'Turno nocturno'
+      }
+    ];
+    
+    // Insert shifts
+    const shiftIds = [];
+    for (const shift of shifts) {
+      const result = await db.execute(
+        `INSERT INTO shifts (user_id, date, start_time, end_time, shift_type, department, status, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [shift.userId, shift.date, shift.startTime, shift.endTime, shift.shiftType, shift.department, shift.status, shift.notes]
+      );
+      shiftIds.push(result.lastInsertId);
+    }
+    
+    console.log(`✓ Created ${shifts.length} sample shifts`);
+    
+    // Get patients for assignments
+    const patients = await db.select('SELECT id FROM patients LIMIT 4');
+    if (patients.length === 0) {
+      console.log('No patients found for assignments');
+      return;
+    }
+    
+    // Assign patients to nurse for today's shift (index 1 = today)
+    const todayShiftId = shiftIds[1];
+    const todayDate = today.toISOString().split('T')[0];
+    
+    for (const patient of patients) {
+      await db.execute(
+        `INSERT INTO nurse_patient_assignments (nurse_id, patient_id, shift_id, assigned_date, assignment_start, assignment_end, status, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [nurseId, patient.id, todayShiftId, todayDate, '07:00', '15:00', 'Active', 'Paciente asignado para cuidados generales']
+      );
+    }
+    
+    console.log(`✓ Assigned ${patients.length} patients to nurse for today's shift`);
+    
+  } catch (error) {
+    console.error('Error initializing sample nurse data:', error);
   }
 }
 
