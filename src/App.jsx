@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Calendar, Clock, User, FileText, Activity, Users, Pill, TestTube, LogOut, Heart, Stethoscope, Brain, Eye, Bone, AlertCircle, CheckCircle, Menu, X, Phone, Moon, Sun, Settings, Package, Hospital, Scissors, MessageSquare, BarChart3, Scan } from 'lucide-react';
-import { usePatients, useAppointments, useTreatments, useVitalSigns, useNurseNotes, usePatientTransfers } from './hooks/useDatabase';
+import { usePatients, useAppointments, useTreatments, useVitalSigns, useNurseNotes, usePatientTransfers, useNonPharmaTreatments } from './hooks/useDatabase';
 import { logout as authLogout } from './services/auth';
 import LoginForm from './components/LoginForm';
 import RegisterForm from './components/RegisterForm';
@@ -253,6 +253,54 @@ const HospitalManagementSystem = () => {
     }
   };
 
+  const applyNonPharmaTreatment = async () => {
+    if (newNonPharmaTreatment.patientId && newNonPharmaTreatment.treatmentType && newNonPharmaTreatment.description) {
+      try {
+        const now = new Date();
+        const applicationDate = now.toISOString().split('T')[0];
+        
+        let applicationTimeStr = now.toTimeString().split(' ')[0].substring(0, 5);
+        if (newNonPharmaTreatment.applicationTime) {
+          applicationTimeStr = newNonPharmaTreatment.applicationTime;
+        }
+        
+        await addNonPharmaTreatment({
+          patient_id: parseInt(newNonPharmaTreatment.patientId),
+          treatment_type: newNonPharmaTreatment.treatmentType,
+          description: newNonPharmaTreatment.description,
+          application_date: applicationDate,
+          application_time: applicationTimeStr,
+          duration: newNonPharmaTreatment.duration,
+          performed_by: currentUser.name,
+          materials_used: newNonPharmaTreatment.materialsUsed,
+          observations: newNonPharmaTreatment.observations,
+          outcome: newNonPharmaTreatment.outcome,
+          next_application: newNonPharmaTreatment.nextApplication,
+          status: 'Completado'
+        });
+        
+        setNewNonPharmaTreatment({ 
+          patientId: '', 
+          treatmentType: '', 
+          description: '', 
+          applicationTime: '', 
+          duration: '', 
+          materialsUsed: '', 
+          observations: '',
+          outcome: '',
+          nextApplication: ''
+        });
+        
+        alert('✅ Tratamiento no farmacológico registrado exitosamente');
+      } catch (error) {
+        console.error('Error applying non-pharmacological treatment:', error);
+        alert('❌ Error al registrar el tratamiento no farmacológico');
+      }
+    } else {
+      alert('⚠️ Por favor complete los campos requeridos: paciente, tipo de tratamiento y descripción');
+    }
+  };
+
   const registerVitalSigns = async () => {
     if (newVitalSigns.patientId && newVitalSigns.temperature && newVitalSigns.bloodPressure && newVitalSigns.heartRate && newVitalSigns.respiratoryRate) {
       // Usar la fecha/hora ingresada o la actual
@@ -338,6 +386,58 @@ const HospitalManagementSystem = () => {
     
     // Load patient transfers
     const { transfers: patientTransfersList } = usePatientTransfers(selectedPatient.id);
+    
+    // Estados para filtros de signos vitales
+    const [vitalFilters, setVitalFilters] = React.useState({
+      dateFrom: '',
+      dateTo: '',
+      shift: 'all' // all, morning, afternoon, night
+    });
+    
+    // Función para determinar el turno según la hora
+    const getShiftFromTime = (dateString) => {
+      const date = new Date(dateString);
+      const hour = date.getHours();
+      if (hour >= 7 && hour < 15) return 'morning';
+      if (hour >= 15 && hour < 23) return 'afternoon';
+      return 'night';
+    };
+    
+    // Filtrar signos vitales
+    const filteredVitals = patientVitals.filter(vital => {
+      const vitalDate = new Date(vital.date);
+      
+      // Filtro por fecha desde
+      if (vitalFilters.dateFrom) {
+        const dateFrom = new Date(vitalFilters.dateFrom);
+        dateFrom.setHours(0, 0, 0, 0);
+        if (vitalDate < dateFrom) return false;
+      }
+      
+      // Filtro por fecha hasta
+      if (vitalFilters.dateTo) {
+        const dateTo = new Date(vitalFilters.dateTo);
+        dateTo.setHours(23, 59, 59, 999);
+        if (vitalDate > dateTo) return false;
+      }
+      
+      // Filtro por turno
+      if (vitalFilters.shift !== 'all') {
+        const vitalShift = getShiftFromTime(vital.date);
+        if (vitalShift !== vitalFilters.shift) return false;
+      }
+      
+      return true;
+    });
+    
+    // Limpiar filtros
+    const clearVitalFilters = () => {
+      setVitalFilters({
+        dateFrom: '',
+        dateTo: '',
+        shift: 'all'
+      });
+    };
 
     return (
       <div className="space-y-4 md:space-y-6">
@@ -549,26 +649,112 @@ const HospitalManagementSystem = () => {
         )}
 
         <div className="bg-white p-4 md:p-6 rounded-lg shadow-md">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg md:text-xl font-bold flex items-center">
+          <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-3">
+            <div className="flex items-center">
               <Activity className="mr-2 text-red-600" size={20} />
-              Historial de Signos Vitales
-            </h3>
-            <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-semibold">
-              {patientVitals.length} {patientVitals.length === 1 ? 'registro' : 'registros'}
+              <h3 className="text-lg md:text-xl font-bold">Historial de Signos Vitales</h3>
+            </div>
+            <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-semibold w-fit">
+              {filteredVitals.length} de {patientVitals.length} {patientVitals.length === 1 ? 'registro' : 'registros'}
             </span>
           </div>
-          {patientVitals.length > 0 ? (
+          
+          {/* Filtros */}
+          <div className="bg-gradient-to-r from-red-50 to-pink-50 border-2 border-red-200 rounded-xl p-4 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-bold text-red-800 flex items-center">
+                🔍 Filtros de Búsqueda
+              </h4>
+              {(vitalFilters.dateFrom || vitalFilters.dateTo || vitalFilters.shift !== 'all') && (
+                <button
+                  onClick={clearVitalFilters}
+                  className="text-xs px-3 py-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-all font-semibold"
+                >
+                  ✕ Limpiar
+                </button>
+              )}
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Filtro de fecha desde */}
+              <div>
+                <label className="block text-xs font-semibold text-red-700 mb-1">
+                  📅 Fecha Desde
+                </label>
+                <input
+                  type="date"
+                  className="w-full px-3 py-2 bg-white border-2 border-red-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
+                  value={vitalFilters.dateFrom}
+                  onChange={(e) => setVitalFilters(prev => ({...prev, dateFrom: e.target.value}))}
+                />
+              </div>
+              
+              {/* Filtro de fecha hasta */}
+              <div>
+                <label className="block text-xs font-semibold text-red-700 mb-1">
+                  📅 Fecha Hasta
+                </label>
+                <input
+                  type="date"
+                  className="w-full px-3 py-2 bg-white border-2 border-red-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
+                  value={vitalFilters.dateTo}
+                  onChange={(e) => setVitalFilters(prev => ({...prev, dateTo: e.target.value}))}
+                />
+              </div>
+              
+              {/* Filtro de turno */}
+              <div>
+                <label className="block text-xs font-semibold text-red-700 mb-1">
+                  🕐 Turno
+                </label>
+                <select
+                  className="w-full px-3 py-2 bg-white border-2 border-red-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm font-semibold"
+                  value={vitalFilters.shift}
+                  onChange={(e) => setVitalFilters(prev => ({...prev, shift: e.target.value}))}
+                >
+                  <option value="all">🌍 Todos los turnos</option>
+                  <option value="morning">🌅 Mañana (07:00 - 15:00)</option>
+                  <option value="afternoon">🌆 Tarde (15:00 - 23:00)</option>
+                  <option value="night">🌙 Noche (23:00 - 07:00)</option>
+                </select>
+              </div>
+            </div>
+            
+            {/* Resumen de filtros activos */}
+            {(vitalFilters.dateFrom || vitalFilters.dateTo || vitalFilters.shift !== 'all') && (
+              <div className="mt-3 pt-3 border-t border-red-200">
+                <p className="text-xs text-red-700">
+                  <span className="font-bold">Filtros activos:</span>
+                  {vitalFilters.dateFrom && <span className="ml-2">📅 Desde {new Date(vitalFilters.dateFrom).toLocaleDateString('es-ES')}</span>}
+                  {vitalFilters.dateTo && <span className="ml-2">📅 Hasta {new Date(vitalFilters.dateTo).toLocaleDateString('es-ES')}</span>}
+                  {vitalFilters.shift !== 'all' && (
+                    <span className="ml-2">
+                      🕐 {vitalFilters.shift === 'morning' ? 'Turno Mañana' : vitalFilters.shift === 'afternoon' ? 'Turno Tarde' : 'Turno Noche'}
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+          </div>
+          
+          {/* Lista de signos vitales filtrados */}
+          {filteredVitals.length > 0 ? (
             <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-              {patientVitals.slice().reverse().map((vital, index) => {
+              {filteredVitals.slice().reverse().map((vital, index) => {
                 const vitalDate = new Date(vital.date);
                 const isToday = vitalDate.toDateString() === new Date().toDateString();
                 const isRecent = (Date.now() - vitalDate.getTime()) < 3600000; // Última hora
+                const shift = getShiftFromTime(vital.date);
+                const shiftNames = {
+                  morning: '🌅 Mañana',
+                  afternoon: '🌆 Tarde',
+                  night: '🌙 Noche'
+                };
                 
                 return (
                   <div key={vital.id || index} className="border-l-4 border-red-300 bg-red-50 rounded-xl p-4 hover:shadow-md transition-all">
                     <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <Clock className="text-red-600" size={16} />
                         <span className="font-bold text-gray-800 text-sm">
                           📅 {vitalDate.toLocaleDateString('es-ES', { 
@@ -576,6 +762,9 @@ const HospitalManagementSystem = () => {
                             month: 'long', 
                             year: 'numeric' 
                           })}
+                        </span>
+                        <span className="text-xs bg-purple-500 text-white px-2 py-0.5 rounded-full font-semibold">
+                          {shiftNames[shift]}
                         </span>
                         {isToday && (
                           <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full font-semibold">
@@ -633,8 +822,23 @@ const HospitalManagementSystem = () => {
           ) : (
             <div className="text-center py-8 text-gray-500">
               <Activity className="mx-auto mb-3 text-gray-400" size={48} />
-              <p className="text-sm">No hay signos vitales registrados</p>
-              <p className="text-xs mt-2">Los registros de signos vitales aparecerán aquí</p>
+              {patientVitals.length === 0 ? (
+                <>
+                  <p className="text-sm">No hay signos vitales registrados</p>
+                  <p className="text-xs mt-2">Los registros de signos vitales aparecerán aquí</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm">No hay registros que coincidan con los filtros</p>
+                  <p className="text-xs mt-2">Intenta ajustar los criterios de búsqueda</p>
+                  <button
+                    onClick={clearVitalFilters}
+                    className="mt-3 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all text-sm font-semibold"
+                  >
+                    🔄 Restablecer filtros
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -1110,6 +1314,17 @@ const HospitalManagementSystem = () => {
     const [newTreatment, setNewTreatment] = useState({ patientId: '', medication: '', dose: '', frequency: '', notes: '', applicationTime: '' });
     const [newVitalSigns, setNewVitalSigns] = useState({ patientId: '', temperature: '', bloodPressure: '', heartRate: '', respiratoryRate: '', dateTime: '' });
     const [newNurseNote, setNewNurseNote] = useState({ patientId: '', note: '', noteType: 'evolutiva' });
+    const [newNonPharmaTreatment, setNewNonPharmaTreatment] = useState({ 
+      patientId: '', 
+      treatmentType: '', 
+      description: '', 
+      applicationTime: '', 
+      duration: '', 
+      materialsUsed: '', 
+      observations: '',
+      outcome: '',
+      nextApplication: ''
+    });
     const [assignedPatients, setAssignedPatients] = useState([]);
     const [nurseShifts, setNurseShifts] = useState([]);
     const [currentShift, setCurrentShift] = useState(null);
@@ -1706,6 +1921,119 @@ Ejemplo:
         </div>
       </div>
 
+      {/* Formulario de Tratamientos No Farmacológicos */}
+      <div className="glass-effect p-6 rounded-2xl shadow-lg border border-gray-200/50">
+        <h3 className="text-xl font-bold mb-5 flex items-center bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+          <Scissors className="mr-2 text-purple-600" size={24} />
+          Registrar Tratamiento No Farmacológico
+        </h3>
+        <div className="space-y-4">
+          <select
+            className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all shadow-sm hover:shadow-md"
+            value={newNonPharmaTreatment.patientId}
+            onChange={(e) => setNewNonPharmaTreatment(prev => ({...prev, patientId: e.target.value}))}
+          >
+            <option value="">Seleccionar paciente</option>
+            {assignedPatients.map(p => (
+              <option key={p.id} value={p.id}>{p.name} - Hab. {p.room}</option>
+            ))}
+          </select>
+          
+          <select
+            className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all shadow-sm hover:shadow-md font-semibold"
+            value={newNonPharmaTreatment.treatmentType}
+            onChange={(e) => setNewNonPharmaTreatment(prev => ({...prev, treatmentType: e.target.value}))}
+          >
+            <option value="">🏥 Tipo de Tratamiento</option>
+            <option value="Curación">🩹 Curación</option>
+            <option value="Nebulización">💨 Nebulización</option>
+            <option value="Fluidoterapia">💧 Fluidoterapia</option>
+            <option value="Oxigenoterapia">🫁 Oxigenoterapia</option>
+            <option value="Fisioterapia Respiratoria">🌬️ Fisioterapia Respiratoria</option>
+            <option value="Aspiración de Secreciones">🔬 Aspiración de Secreciones</option>
+            <option value="Cambio de Sonda">🔌 Cambio de Sonda</option>
+            <option value="Cambio de Catéter">💉 Cambio de Catéter</option>
+            <option value="Enema">💊 Enema</option>
+            <option value="Baño de Esponja">🧽 Baño de Esponja</option>
+            <option value="Movilización">🤸 Movilización</option>
+            <option value="Prevención de Úlceras">🛡️ Prevención de Úlceras por Presión</option>
+            <option value="Otro">📝 Otro</option>
+          </select>
+          
+          <textarea
+            placeholder="📋 Descripción del tratamiento (detalle el procedimiento realizado)"
+            className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all shadow-sm hover:shadow-md resize-none"
+            rows="3"
+            value={newNonPharmaTreatment.description}
+            onChange={(e) => setNewNonPharmaTreatment(prev => ({...prev, description: e.target.value}))}
+          />
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
+              <label className="block text-xs font-semibold text-purple-700 mb-2 flex items-center">
+                <Clock className="mr-1" size={14} />
+                Hora de Aplicación
+              </label>
+              <input
+                type="time"
+                className="w-full px-4 py-2.5 bg-white border-2 border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all shadow-sm"
+                value={newNonPharmaTreatment.applicationTime}
+                onChange={(e) => setNewNonPharmaTreatment(prev => ({...prev, applicationTime: e.target.value}))}
+              />
+              <p className="text-xs text-purple-600 mt-1">⚡ Si no especifica, se usará la hora actual</p>
+            </div>
+            
+            <input
+              type="text"
+              placeholder="⏱️ Duración (ej: 30 minutos)"
+              className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all shadow-sm hover:shadow-md"
+              value={newNonPharmaTreatment.duration}
+              onChange={(e) => setNewNonPharmaTreatment(prev => ({...prev, duration: e.target.value}))}
+            />
+          </div>
+          
+          <input
+            type="text"
+            placeholder="📦 Materiales utilizados (opcional)"
+            className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all shadow-sm hover:shadow-md"
+            value={newNonPharmaTreatment.materialsUsed}
+            onChange={(e) => setNewNonPharmaTreatment(prev => ({...prev, materialsUsed: e.target.value}))}
+          />
+          
+          <textarea
+            placeholder="👁️ Observaciones durante el procedimiento (opcional)"
+            className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all shadow-sm hover:shadow-md resize-none"
+            rows="2"
+            value={newNonPharmaTreatment.observations}
+            onChange={(e) => setNewNonPharmaTreatment(prev => ({...prev, observations: e.target.value}))}
+          />
+          
+          <input
+            type="text"
+            placeholder="✅ Resultado del tratamiento (opcional)"
+            className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all shadow-sm hover:shadow-md"
+            value={newNonPharmaTreatment.outcome}
+            onChange={(e) => setNewNonPharmaTreatment(prev => ({...prev, outcome: e.target.value}))}
+          />
+          
+          <input
+            type="datetime-local"
+            placeholder="📅 Próxima aplicación (opcional)"
+            className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all shadow-sm hover:shadow-md"
+            value={newNonPharmaTreatment.nextApplication}
+            onChange={(e) => setNewNonPharmaTreatment(prev => ({...prev, nextApplication: e.target.value}))}
+          />
+          
+          <button
+            onClick={applyNonPharmaTreatment}
+            className="w-full py-3.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl hover:from-purple-600 hover:to-pink-600 transition-all font-bold shadow-lg hover:shadow-xl flex items-center justify-center"
+          >
+            <Scissors className="mr-2" size={20} />
+            Registrar Tratamiento
+          </button>
+        </div>
+      </div>
+
       {/* Notas Evolutivas del Turno */}
       <div className="glass-effect p-6 rounded-2xl shadow-lg border border-gray-200/50">
         <div className="flex items-center justify-between mb-5">
@@ -1788,6 +2116,154 @@ Ejemplo:
             <FileText className="mx-auto mb-3 text-gray-400" size={48} />
             <p>No hay notas evolutivas registradas</p>
             <p className="text-sm mt-2">Registre la primera nota del turno arriba</p>
+          </div>
+        )}
+      </div>
+
+      {/* Historial de Tratamientos No Farmacológicos */}
+      <div className="glass-effect p-6 rounded-2xl shadow-lg border border-gray-200/50">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-xl font-bold flex items-center bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+            <Scissors className="mr-2 text-purple-600" size={24} />
+            Tratamientos No Farmacológicos del Turno
+          </h3>
+          <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold">
+            {nonPharmaTreatments.filter(treatment => {
+              const treatmentDate = new Date(treatment.applicationDate);
+              const today = new Date();
+              return treatmentDate.toDateString() === today.toDateString();
+            }).length} tratamientos hoy
+          </span>
+        </div>
+        
+        {nonPharmaTreatments.length > 0 ? (
+          <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+            {nonPharmaTreatments.slice().reverse().map((treatment, index) => {
+              const patient = assignedPatients.find(p => p.id === treatment.patientId) || patients.find(p => p.id === treatment.patientId);
+              const treatmentDate = new Date(treatment.applicationDate);
+              const isToday = treatmentDate.toDateString() === new Date().toDateString();
+              const isRecent = (Date.now() - treatmentDate.getTime()) < 3600000; // Última hora
+              
+              const treatmentTypeIcons = {
+                'Curación': '🩹',
+                'Nebulización': '💨',
+                'Fluidoterapia': '💧',
+                'Oxigenoterapia': '🫁',
+                'Fisioterapia Respiratoria': '🌬️',
+                'Aspiración de Secreciones': '🔬',
+                'Cambio de Sonda': '🔌',
+                'Cambio de Catéter': '💉',
+                'Enema': '💊',
+                'Baño de Esponja': '🧽',
+                'Movilización': '🤸',
+                'Prevención de Úlceras': '🛡️',
+                'Otro': '📝'
+              };
+              
+              return (
+                <div 
+                  key={treatment.id || index} 
+                  className="border-l-4 border-purple-300 bg-purple-50 rounded-xl p-4 hover:shadow-md transition-all"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2 flex-1">
+                      <div className="bg-purple-500 text-white p-2 rounded-lg">
+                        <Scissors size={20} />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-bold text-gray-800">
+                            {patient ? patient.name : 'Paciente desconocido'}
+                          </p>
+                          {isToday && <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">HOY</span>}
+                          {isRecent && <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full">RECIENTE</span>}
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          🏥 Habitación {patient?.room} • 
+                          <Clock className="inline ml-1 mr-1" size={12} />
+                          {treatment.applicationTime || 'Hora no especificada'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white rounded-lg p-3 mb-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-2xl">{treatmentTypeIcons[treatment.treatmentType] || '📝'}</span>
+                      <span className="font-bold text-purple-700 text-lg">{treatment.treatmentType}</span>
+                      {treatment.duration && (
+                        <span className="ml-auto text-xs bg-purple-200 text-purple-800 px-2 py-1 rounded-full font-semibold">
+                          ⏱️ {treatment.duration}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-700 leading-relaxed">
+                      {treatment.description}
+                    </p>
+                  </div>
+                  
+                  {treatment.materialsUsed && (
+                    <div className="bg-white rounded-lg p-2.5 mb-2">
+                      <p className="text-xs text-gray-600 font-semibold mb-1">📦 Materiales utilizados:</p>
+                      <p className="text-sm text-gray-700">{treatment.materialsUsed}</p>
+                    </div>
+                  )}
+                  
+                  {treatment.observations && (
+                    <div className="bg-white rounded-lg p-2.5 mb-2">
+                      <p className="text-xs text-gray-600 font-semibold mb-1">👁️ Observaciones:</p>
+                      <p className="text-sm text-gray-700 italic">{treatment.observations}</p>
+                    </div>
+                  )}
+                  
+                  {treatment.outcome && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-2.5 mb-2">
+                      <p className="text-xs text-green-700 font-semibold mb-1">✅ Resultado:</p>
+                      <p className="text-sm text-green-800">{treatment.outcome}</p>
+                    </div>
+                  )}
+                  
+                  {treatment.nextApplication && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 mb-2">
+                      <p className="text-xs text-blue-700 font-semibold mb-1">📅 Próxima aplicación:</p>
+                      <p className="text-sm text-blue-800">
+                        {new Date(treatment.nextApplication).toLocaleString('es-ES', {
+                          day: 'numeric',
+                          month: 'long',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center justify-between pt-2 border-t border-purple-200">
+                    <div className="flex flex-col gap-1">
+                      <p className="text-xs text-gray-500">
+                        👨‍⚕️ Realizado por: <span className="font-semibold">{treatment.performedBy}</span>
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        📅 {treatmentDate.toLocaleDateString('es-ES', { 
+                          day: 'numeric', 
+                          month: 'long', 
+                          year: 'numeric' 
+                        })}
+                      </p>
+                    </div>
+                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
+                      {treatment.status}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            <Scissors className="mx-auto mb-3 text-gray-400" size={48} />
+            <p>No hay tratamientos no farmacológicos registrados</p>
+            <p className="text-sm mt-2">Registre el primer tratamiento del turno arriba</p>
           </div>
         )}
       </div>

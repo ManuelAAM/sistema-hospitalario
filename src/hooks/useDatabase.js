@@ -271,3 +271,46 @@ export function usePatientTransfers(patientId = null) {
 
   return { transfers, loading, error, addTransfer, refreshTransfers: loadTransfers };
 }
+
+// Hook for non-pharmacological treatments
+export function useNonPharmaTreatments() {
+  const [nonPharmaTreatments, setNonPharmaTreatments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const loadNonPharmaTreatments = async () => {
+    try {
+      setLoading(true);
+      const data = await db.getAllNonPharmaTreatments();
+      setNonPharmaTreatments(data);
+      setError(null);
+    } catch (err) {
+      console.error('Error loading non-pharmacological treatments:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadNonPharmaTreatments();
+  }, []);
+
+  const addNonPharmaTreatment = async (treatment) => {
+    try {
+      await db.createNonPharmaTreatment(treatment);
+      await loadNonPharmaTreatments();
+    } catch (err) {
+      console.error('Error adding non-pharmacological treatment:', err);
+      throw err;
+    }
+  };
+
+  return { 
+    nonPharmaTreatments, 
+    loading, 
+    error, 
+    addNonPharmaTreatment,
+    refreshNonPharmaTreatments: loadNonPharmaTreatments 
+  };
+}

@@ -203,6 +203,28 @@ async function createTables() {
     )
   `);
 
+  // Non-pharmacological treatments table (curaciones, nebulizaciones, fluidoterapia, etc.)
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS non_pharmacological_treatments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id INTEGER NOT NULL,
+      treatment_type TEXT NOT NULL,
+      description TEXT NOT NULL,
+      application_date TEXT NOT NULL,
+      application_time TEXT,
+      duration TEXT,
+      performed_by TEXT NOT NULL,
+      materials_used TEXT,
+      observations TEXT,
+      outcome TEXT,
+      next_application TEXT,
+      status TEXT DEFAULT 'Completado',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (patient_id) REFERENCES patients(id)
+    )
+  `);
+  console.log('✓ Non-pharmacological treatments table created');
+
   // Notifications table
   await db.execute(`
     CREATE TABLE IF NOT EXISTS notifications (
