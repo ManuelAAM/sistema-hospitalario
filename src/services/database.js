@@ -225,6 +225,30 @@ async function createTables() {
   `);
   console.log('✓ Non-pharmacological treatments table created');
 
+  // Nursing shift reports table (hoja de enfermería digital)
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS nursing_shift_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shift_date TEXT NOT NULL,
+      shift_type TEXT NOT NULL,
+      nurse_id INTEGER NOT NULL,
+      nurse_name TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT,
+      patients_assigned TEXT NOT NULL,
+      general_observations TEXT,
+      incidents TEXT,
+      pending_tasks TEXT,
+      handover_notes TEXT,
+      supervisor_name TEXT,
+      status TEXT DEFAULT 'En Curso',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (nurse_id) REFERENCES users(id)
+    )
+  `);
+  console.log('✓ Nursing shift reports table created');
+
   // Notifications table
   await db.execute(`
     CREATE TABLE IF NOT EXISTS notifications (
@@ -817,6 +841,102 @@ export async function createNurseNote(note) {
     [note.patientId, note.date, note.note, note.noteType || 'evolutiva', note.nurseName]
   );
   return result.lastInsertId;
+}
+
+// ========== NURSING SHIFT REPORT OPERATIONS ==========
+
+export async function createNursingShiftReport(report) {
+  const db = await initDatabase();
+  const result = await db.execute(
+    `INSERT INTO nursing_shift_reports 
+     (shift_date, shift_type, nurse_id, nurse_name, start_time, end_time, 
+      patients_assigned, general_observations, incidents, pending_tasks, 
+      handover_notes, supervisor_name, status) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      report.shiftDate,
+      report.shiftType,
+      report.nurseId,
+      report.nurseName,
+      report.startTime,
+      report.endTime || null,
+      report.patientsAssigned,
+      report.generalObservations || null,
+      report.incidents || null,
+      report.pendingTasks || null,
+      report.handoverNotes || null,
+      report.supervisorName || null,
+      report.status || 'En Curso'
+    ]
+  );
+  return result.lastInsertId;
+}
+
+export async function updateNursingShiftReport(reportId, updates) {
+  const db = await initDatabase();
+  const fields = [];
+  const values = [];
+  
+  if (updates.endTime !== undefined) {
+    fields.push('end_time = ?');
+    values.push(updates.endTime);
+  }
+  if (updates.generalObservations !== undefined) {
+    fields.push('general_observations = ?');
+    values.push(updates.generalObservations);
+  }
+  if (updates.incidents !== undefined) {
+    fields.push('incidents = ?');
+    values.push(updates.incidents);
+  }
+  if (updates.pendingTasks !== undefined) {
+    fields.push('pending_tasks = ?');
+    values.push(updates.pendingTasks);
+  }
+  if (updates.handoverNotes !== undefined) {
+    fields.push('handover_notes = ?');
+    values.push(updates.handoverNotes);
+  }
+  if (updates.supervisorName !== undefined) {
+    fields.push('supervisor_name = ?');
+    values.push(updates.supervisorName);
+  }
+  if (updates.status !== undefined) {
+    fields.push('status = ?');
+    values.push(updates.status);
+  }
+  
+  fields.push('updated_at = CURRENT_TIMESTAMP');
+  values.push(reportId);
+  
+  await db.execute(
+    `UPDATE nursing_shift_reports SET ${fields.join(', ')} WHERE id = ?`,
+    values
+  );
+}
+
+export async function getNursingShiftReportsByNurseId(nurseId) {
+  const db = await initDatabase();
+  return await db.select(
+    'SELECT * FROM nursing_shift_reports WHERE nurse_id = ? ORDER BY shift_date DESC, created_at DESC',
+    [nurseId]
+  );
+}
+
+export async function getNursingShiftReportByDateAndNurse(shiftDate, nurseId) {
+  const db = await initDatabase();
+  const reports = await db.select(
+    'SELECT * FROM nursing_shift_reports WHERE shift_date = ? AND nurse_id = ? ORDER BY created_at DESC LIMIT 1',
+    [shiftDate, nurseId]
+  );
+  return reports.length > 0 ? reports[0] : null;
+}
+
+export async function getAllNursingShiftReports() {
+  const db = await initDatabase();
+  return await db.select(
+    'SELECT * FROM nursing_shift_reports ORDER BY shift_date DESC, created_at DESC'
+  );
 }
 
 // ========== DATA SEEDING (for initial demo data) ==========

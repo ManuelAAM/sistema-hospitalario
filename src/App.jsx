@@ -2527,6 +2527,145 @@ Ejemplo:
           })}
         </div>
       </div>
+
+      {/* Hoja de Enfermería Digital - Resumen del Turno */}
+      <div className="glass-effect p-6 rounded-2xl shadow-lg border-2 border-indigo-200 bg-gradient-to-br from-white to-indigo-50 print:shadow-none">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-2xl font-bold flex items-center bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+            <FileText className="mr-3 text-indigo-600" size={28} />
+            📋 Hoja de Enfermería Digital
+          </h3>
+          <button
+            onClick={() => window.print()}
+            className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-lg hover:from-indigo-600 hover:to-purple-600 transition-all font-semibold shadow-md flex items-center gap-2 print:hidden"
+          >
+            <FileText size={18} />
+            Imprimir
+          </button>
+        </div>
+
+        {/* Información del Turno */}
+        <div className="bg-white rounded-xl p-5 mb-5 border-2 border-indigo-100">
+          <h4 className="font-bold text-lg text-indigo-700 mb-4 flex items-center">
+            <Clock className="mr-2" size={20} />
+            Información del Turno
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-indigo-50 p-3 rounded-lg">
+              <p className="text-xs text-indigo-600 font-semibold mb-1">👨‍⚕️ Enfermero(a)</p>
+              <p className="font-bold text-gray-800">{currentUser.name}</p>
+            </div>
+            <div className="bg-indigo-50 p-3 rounded-lg">
+              <p className="text-xs text-indigo-600 font-semibold mb-1">📅 Fecha</p>
+              <p className="font-bold text-gray-800">
+                {new Date().toLocaleDateString('es-ES', { 
+                  weekday: 'long', 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric' 
+                })}
+              </p>
+            </div>
+            <div className="bg-indigo-50 p-3 rounded-lg">
+              <p className="text-xs text-indigo-600 font-semibold mb-1">🕐 Turno</p>
+              <p className="font-bold text-gray-800">
+                {(() => {
+                  const hour = new Date().getHours();
+                  if (hour >= 7 && hour < 15) return '🌅 Mañana (07:00 - 15:00)';
+                  if (hour >= 15 && hour < 23) return '🌆 Tarde (15:00 - 23:00)';
+                  return '🌙 Noche (23:00 - 07:00)';
+                })()}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Resumen de Pacientes Asignados */}
+        <div className="bg-white rounded-xl p-5 mb-5 border-2 border-green-100">
+          <h4 className="font-bold text-lg text-green-700 mb-4 flex items-center">
+            <Users className="mr-2" size={20} />
+            Pacientes Asignados ({assignedPatients.length})
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {assignedPatients.map((patient) => {
+              const triageInfo = getTriageInfo(patient.triageLevel || 3);
+              return (
+                <div key={patient.id} className={`bg-gray-50 p-3 rounded-lg border-l-4 ${triageInfo.borderColor}`}>
+                  <p className="font-bold text-gray-800 text-sm">{patient.name}</p>
+                  <p className="text-xs text-gray-600 mt-1">
+                    🏥 Hab. {patient.room} • Piso {patient.floor} • {patient.area}
+                  </p>
+                  <p className="text-xs text-gray-600">🛏️ Cama {patient.bed}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${triageInfo.bgColor} ${triageInfo.textColor}`}>
+                      {triageInfo.label}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Resumen Estadístico del Turno */}
+        <div className="bg-gradient-to-r from-indigo-100 to-purple-100 rounded-xl p-5 border-2 border-indigo-200">
+          <h4 className="font-bold text-lg text-indigo-800 mb-4 flex items-center">
+            <BarChart3 className="mr-2" size={20} />
+            Resumen Estadístico del Turno
+          </h4>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="bg-white p-3 rounded-lg text-center">
+              <p className="text-2xl font-bold text-green-600">{assignedPatients.length}</p>
+              <p className="text-xs text-gray-600 mt-1">Pacientes</p>
+            </div>
+            <div className="bg-white p-3 rounded-lg text-center">
+              <p className="text-2xl font-bold text-red-600">
+                {vitalSigns.filter(v => {
+                  const d = new Date(v.date);
+                  return d.toDateString() === new Date().toDateString();
+                }).length}
+              </p>
+              <p className="text-xs text-gray-600 mt-1">Signos Vitales</p>
+            </div>
+            <div className="bg-white p-3 rounded-lg text-center">
+              <p className="text-2xl font-bold text-green-600">
+                {treatments.filter(t => {
+                  const d = new Date(t.lastApplication);
+                  return d.toDateString() === new Date().toDateString();
+                }).length}
+              </p>
+              <p className="text-xs text-gray-600 mt-1">Medicamentos</p>
+            </div>
+            <div className="bg-white p-3 rounded-lg text-center">
+              <p className="text-2xl font-bold text-purple-600">
+                {nonPharmaTreatments.filter(t => {
+                  const d = new Date(t.applicationDate);
+                  return d.toDateString() === new Date().toDateString();
+                }).length}
+              </p>
+              <p className="text-xs text-gray-600 mt-1">Procedimientos</p>
+            </div>
+            <div className="bg-white p-3 rounded-lg text-center">
+              <p className="text-2xl font-bold text-blue-600">
+                {nurseNotes.filter(n => {
+                  const d = new Date(n.date);
+                  return d.toDateString() === new Date().toDateString();
+                }).length}
+              </p>
+              <p className="text-xs text-gray-600 mt-1">Notas</p>
+            </div>
+          </div>
+          
+          <div className="mt-4 bg-white p-3 rounded-lg">
+            <p className="text-xs text-gray-600 mb-1">
+              <span className="font-semibold">Generado:</span> {new Date().toLocaleString('es-ES')}
+            </p>
+            <p className="text-xs text-gray-600">
+              <span className="font-semibold">Responsable:</span> {currentUser.name}
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
     );
   };
